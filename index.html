@@ -21,6 +21,7 @@
             width: 100%;
             height: 100%;
             outline: none;
+            touch-action: none;
         }
         .custom-scrollbar::-webkit-scrollbar {
             width: 6px;
@@ -133,8 +134,13 @@
         const pivot = new THREE.Group();
         cubeGroup.add(pivot);
 
+        const hitBoxGeo = new THREE.BoxGeometry(3.0, 3.0, 3.0); 
+        const hitBoxMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+        const hitBox = new THREE.Mesh(hitBoxGeo, hitBoxMat);
+        cubeGroup.add(hitBox);
+
         const cubies = [];
-        
+
         const colors = {
             right: 0xB71234, left: 0xFF5800, top: 0xFFFFFF,
             bottom: 0xFFD500, front: 0x009B48, back: 0x0046AD, core: 0x111111
@@ -147,12 +153,12 @@
             for (let y = -1; y <= 1; y++) {
                 for (let z = -1; z <= 1; z++) {
                     const materials = [
-                        new THREE.MeshPhysicalMaterial({ color: x === 1 ? colors.right : colors.core, roughness: 0.1, clearcoat: 0.5 }),
-                        new THREE.MeshPhysicalMaterial({ color: x === -1 ? colors.left : colors.core, roughness: 0.1, clearcoat: 0.5 }),
-                        new THREE.MeshPhysicalMaterial({ color: y === 1 ? colors.top : colors.core, roughness: 0.1, clearcoat: 0.5 }),
-                        new THREE.MeshPhysicalMaterial({ color: y === -1 ? colors.bottom : colors.core, roughness: 0.1, clearcoat: 0.5 }),
-                        new THREE.MeshPhysicalMaterial({ color: z === 1 ? colors.front : colors.core, roughness: 0.1, clearcoat: 0.5 }),
-                        new THREE.MeshPhysicalMaterial({ color: z === -1 ? colors.back : colors.core, roughness: 0.1, clearcoat: 0.5 })
+                        new THREE.MeshStandardMaterial({ color: x === 1 ? colors.right : colors.core, roughness: 0.2, metalness: 0.1 }),
+                        new THREE.MeshStandardMaterial({ color: x === -1 ? colors.left : colors.core, roughness: 0.2, metalness: 0.1 }),
+                        new THREE.MeshStandardMaterial({ color: y === 1 ? colors.top : colors.core, roughness: 0.2, metalness: 0.1 }),
+                        new THREE.MeshStandardMaterial({ color: y === -1 ? colors.bottom : colors.core, roughness: 0.2, metalness: 0.1 }),
+                        new THREE.MeshStandardMaterial({ color: z === 1 ? colors.front : colors.core, roughness: 0.2, metalness: 0.1 }),
+                        new THREE.MeshStandardMaterial({ color: z === -1 ? colors.back : colors.core, roughness: 0.2, metalness: 0.1 })
                     ];
 
                     const cubie = new THREE.Mesh(geometry, materials);
@@ -166,6 +172,7 @@
 
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
+        const cameraNormal = new THREE.Vector3();
         
         let isDragging = false;
         let isAnimating = false;
@@ -248,28 +255,36 @@
 
         function onPointerDown(event) {
             if (event.target !== renderer.domElement) return;
-            if (isAnimating || isAutoSolving) return;
 
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
             raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(cubies);
+            
+            const hitBoxIntersect = raycaster.intersectObject(hitBox);
+            if (hitBoxIntersect.length > 0) {
+                controls.enabled = false; // قفل دوران الكاميرا
+                
+                if (isAnimating || isAutoSolving) return;
 
-            if (intersects.length > 0) {
-                isDragging = true;
-                controls.enabled = false;
-                startIntersect = intersects[0];
-                startPoint.copy(startIntersect.point);
+                const intersects = raycaster.intersectObjects(cubies);
+                if (intersects.length > 0) {
+                    isDragging = true;
+                    startIntersect = intersects[0];
+                    startPoint.copy(startIntersect.point);
 
-                hitNormal.copy(startIntersect.face.normal);
-                hitNormal.transformDirection(startIntersect.object.matrixWorld).normalize();
+                    hitNormal.copy(startIntersect.face.normal);
+                    hitNormal.transformDirection(startIntersect.object.matrixWorld).normalize();
+                    hitNormal.x = Math.round(hitNormal.x);
+                    hitNormal.y = Math.round(hitNormal.y);
+                    hitNormal.z = Math.round(hitNormal.z);
 
-                hitNormal.x = Math.round(hitNormal.x);
-                hitNormal.y = Math.round(hitNormal.y);
-                hitNormal.z = Math.round(hitNormal.z);
-
-                dragPlane.setFromNormalAndCoplanarPoint(hitNormal, startPoint);
+                    // مستوى سحب يواجه الكاميرا بشكل مثالي
+                    camera.getWorldDirection(cameraNormal).negate();
+                    dragPlane.setFromNormalAndCoplanarPoint(cameraNormal, startPoint);
+                }
+            } else {
+                controls.enabled = true; // السماح بدوران الكاميرا عند النقر على الخلفية
             }
         }
 
@@ -281,45 +296,63 @@
 
             raycaster.setFromCamera(mouse, camera);
             const currentPoint = new THREE.Vector3();
-            raycaster.ray.intersectPlane(dragPlane, currentPoint);
-
-            if (!currentPoint) return;
+            
+            if (!raycaster.ray.intersectPlane(dragPlane, currentPoint)) return;
 
             const drag3D = currentPoint.clone().sub(startPoint);
 
-            if (!activeAxis && drag3D.length() > 0.1) {
-                const cross = hitNormal.clone().cross(drag3D);
-                const absX = Math.abs(cross.x), absY = Math.abs(cross.y), absZ = Math.abs(cross.z);
+            // تم التعديل الجذري هنا لضمان التقاط الحركة بدقة مهما كانت الزاوية
+            if (!activeAxis && drag3D.length() > 0.03) {
+                const axes = ['x', 'y', 'z'];
+                let bestAxis = null;
+                let maxDot = -1;
 
-                if (absX > absY && absX > absZ) activeAxis = 'x';
-                else if (absY > absX && absY > absZ) activeAxis = 'y';
-                else activeAxis = 'z';
+                axes.forEach(axis => {
+                    if (Math.abs(hitNormal[axis]) > 0.5) return; 
 
-                activeSlice = Math.round(startIntersect.object.position[activeAxis]);
+                    const axisVec = new THREE.Vector3();
+                    axisVec[axis] = 1;
+                    const tangent = axisVec.clone().cross(hitNormal).normalize();
+                    
+                    // إسقاط الحركة 3D لتتناسب تماماً مع الشاشة 2D
+                    const projTangent = tangent.clone().projectOnPlane(cameraNormal).normalize();
+                    const dot = Math.abs(drag3D.clone().normalize().dot(projTangent));
+                    
+                    if (dot > maxDot) {
+                        maxDot = dot;
+                        bestAxis = axis;
+                    }
+                });
 
-                pivot.rotation.set(0, 0, 0);
-                pivot.updateMatrixWorld();
-                
-                const cubiesToMove = cubies.filter(c => Math.round(c.position[activeAxis]) === activeSlice);
-                cubiesToMove.forEach(c => pivot.attach(c));
+                if (bestAxis) {
+                    activeAxis = bestAxis;
+                    activeSlice = Math.round(startIntersect.object.position[activeAxis]);
+
+                    pivot.rotation.set(0, 0, 0);
+                    pivot.updateMatrixWorld();
+                    
+                    const cubiesToMove = cubies.filter(c => Math.round(c.position[activeAxis]) === activeSlice);
+                    cubiesToMove.forEach(c => pivot.attach(c));
+                }
             }
 
             if (activeAxis) {
-                const axisVector = new THREE.Vector3();
-                axisVector[activeAxis] = 1;
-
-                const tangent = axisVector.clone().cross(hitNormal).normalize();
-                const dot = drag3D.dot(tangent);
+                const axisVec = new THREE.Vector3();
+                axisVec[activeAxis] = 1;
+                const tangent = axisVec.clone().cross(hitNormal).normalize();
+                const projTangent = tangent.clone().projectOnPlane(cameraNormal).normalize();
                 
-                const angle = dot * 1.25; 
+                // حساب زاوية الدوران بدقة تتطابق مع الماوس تماماً (حلت المشكلة الجوهرية)
+                const angle = drag3D.dot(projTangent) * 1.5; 
                 pivot.rotation[activeAxis] = angle;
             }
         }
 
         function onPointerUp() {
+            controls.enabled = true;
+
             if (!isDragging) return;
             isDragging = false;
-            controls.enabled = true;
 
             if (activeAxis && !isAnimating) {
                 isAnimating = true;
@@ -360,20 +393,25 @@
                 }
             }
 
+            pivot.updateMatrixWorld(true);
+
             const children = pivot.children.slice();
             children.forEach(c => {
                 cubeGroup.attach(c);
                 c.updateMatrix();
                 
                 const elements = c.matrix.elements;
-                for (let i = 0; i < 16; i++) elements[i] = Math.round(elements[i]);
+                for (let i = 0; i < 16; i++) {
+                    elements[i] = Math.round(elements[i]);
+                    if(elements[i] === -0) elements[i] = 0;
+                }
                 c.matrix.decompose(c.position, c.quaternion, c.scale);
             });
             
             pivot.rotation.set(0, 0, 0);
             activeAxis = null;
             activeSlice = null;
-            isAnimating = false; // تم الفك والربط بالكامل بأمان
+            isAnimating = false;
         }
 
         function scramble() {
@@ -437,13 +475,12 @@
                 c.updateMatrix();
             });
             controls.reset();
-            // Reset Target position 
             controls.target.set(getOffsetX(), 0, 0);
         }
 
         function generateSolution() {
             if (isAnimating || isDragging) return;
-
+            
             if (moveHistory.length === 0) {
                 alert("Cube is already solved!");
                 return;
@@ -509,16 +546,17 @@
             });
         }
 
-        // دالة يتم استدعاؤها عند انتهاء الحل بنجاح لإظهار كلمة Solved
         function markAsSolved() {
             pauseAutoSolve();
             moveHistory = []; 
             controls.enabled = true;
             
-            // Fail-safe Snapping: إعادة تعيين قوية لكل الإحداثيات للتأكد من عدم وجود أي خطأ بصري
             cubies.forEach(c => {
                 const elements = c.matrix.elements;
-                for (let i = 0; i < 16; i++) elements[i] = Math.round(elements[i]);
+                for (let i = 0; i < 16; i++) {
+                    elements[i] = Math.round(elements[i]);
+                    if(elements[i] === -0) elements[i] = 0;
+                }
                 c.matrix.decompose(c.position, c.quaternion, c.scale);
             });
 
@@ -528,7 +566,7 @@
         }
 
         function playNextStep() {
-            if (isAnimating) return; // منع التداخل بشكل كامل!
+            if (isAnimating) return;
             
             if (currentStepIndex >= solutionSequence.length) {
                 markAsSolved();
@@ -557,7 +595,6 @@
                     currentStepIndex++;
                     updateBadgesUI();
                     
-                    // استخدام setTimeout لضمان أن كل المتغيرات استقرت قبل استدعاء الخطوة التالية
                     setTimeout(() => {
                         if (isAutoSolving && currentStepIndex < solutionSequence.length) {
                             playNextStep();
@@ -586,6 +623,7 @@
             clearTimeout(autoSolveTimer);
         }
 
+        // أزرار التحكم
         document.getElementById('btn-scramble').addEventListener('click', scramble);
         document.getElementById('btn-reset').addEventListener('click', resetCube);
         document.getElementById('btn-solution').addEventListener('click', generateSolution);
@@ -594,6 +632,7 @@
         document.getElementById('btn-pause').addEventListener('click', pauseAutoSolve);
         document.getElementById('btn-resume').addEventListener('click', () => { if(!isAutoSolving && solutionSequence.length > 0) toggleAutoSolve(); });
 
+        // منع القوائم من التأثير على الشاشة
         document.getElementById('ui-panel').addEventListener('pointerdown', (e) => e.stopPropagation());
         document.getElementById('ui-panel').addEventListener('wheel', (e) => e.stopPropagation());
 
@@ -604,9 +643,14 @@
             
             const newOffset = getOffsetX();
             cubeGroup.position.x = newOffset;
-            controls.target.set(newOffset, 0, 0); // الحفاظ على مركزية الدوران عند تغيير الحجم
+            controls.target.set(newOffset, 0, 0); 
             controls.update();
         });
+
+        // أحداث اللمس والماوس
+        renderer.domElement.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
 
         function animate(time) {
             requestAnimationFrame(animate);
