@@ -183,7 +183,35 @@
         let isAutoSolving = false;
         let autoSolveTimer = null;
 
-        // دالة أقوى لمنع تجاهل أي خطوة (حتى الحركات العكسية المتتالية أو الزوايا الكبيرة)
+        function optimizeHistory(history) {
+            let optimized = [];
+            for (let i = 0; i < history.length; i++) {
+                let currentMove = history[i];
+                if (optimized.length > 0) {
+                    let prevMove = optimized[optimized.length - 1];
+                    if (prevMove.axis === currentMove.axis && prevMove.slice === currentMove.slice) {
+                        let newTurns = (prevMove.turns + currentMove.turns) % 4;
+                        if (newTurns === 3) newTurns = -1;
+                        if (newTurns === -3) newTurns = 1;
+                        if (newTurns === -2) newTurns = 2;
+                        
+                        optimized.pop(); 
+                        if (newTurns !== 0) { 
+                            optimized.push({
+                                axis: currentMove.axis,
+                                slice: currentMove.slice,
+                                turns: newTurns,
+                                angle: newTurns * (Math.PI / 2)
+                            });
+                        }
+                        continue;
+                    }
+                }
+                optimized.push(currentMove);
+            }
+            return optimized;
+        }
+
         function getMoveNotation(axis, slice, angle) {
             let turns = Math.round(angle / (Math.PI / 2));
             turns = turns % 4;
@@ -308,10 +336,23 @@
 
         function finalizeRotation(recordMove = true) {
             if (activeAxis !== null) {
-                let finalAngle = Math.round(pivot.rotation[activeAxis] / (Math.PI/2)) * (Math.PI/2);
+                let finalAngle = pivot.rotation[activeAxis];
+                let turns = Math.round(finalAngle / (Math.PI/2));
+                turns = turns % 4;
+                if (turns === 3) turns = -1;
+                if (turns === -3) turns = 1;
+                if (turns === -2) turns = 2;
                 
-                if (recordMove && Math.abs(finalAngle) > 0.1) {
-                    moveHistory.push({ axis: activeAxis, slice: activeSlice, angle: finalAngle });
+                if (recordMove && turns !== 0) {
+                    moveHistory.push({ 
+                        axis: activeAxis, 
+                        slice: activeSlice, 
+                        turns: turns, 
+                        angle: turns * (Math.PI/2) 
+                    });
+                    
+                    moveHistory = optimizeHistory(moveHistory);
+
                     if (!isAutoSolving && solutionSequence.length > 0) {
                         document.getElementById('solution-card').classList.add('hidden');
                         solutionSequence = [];
@@ -332,12 +373,8 @@
             pivot.rotation.set(0, 0, 0);
             activeAxis = null;
             activeSlice = null;
-            isAnimating = false;
+            isAnimating = false; // تم الفك والربط بالكامل بأمان
         }
-
-        renderer.domElement.addEventListener('pointerdown', onPointerDown);
-        window.addEventListener('pointermove', onPointerMove);
-        window.addEventListener('pointerup', onPointerUp);
 
         function scramble() {
             if (isAnimating || isDragging) return;
@@ -406,19 +443,25 @@
 
         function generateSolution() {
             if (isAnimating || isDragging) return;
+
             if (moveHistory.length === 0) {
-                alert("Cube is already solved or no moves recorded!");
+                alert("Cube is already solved!");
                 return;
             }
 
             pauseAutoSolve();
             
             solutionSequence = moveHistory.slice().reverse().map(m => {
+                let revTurns = -m.turns;
+                if (revTurns === -3) revTurns = 1;
+                if (revTurns === 3) revTurns = -1;
+                if (revTurns === -2) revTurns = 2;
+
                 return {
                     axis: m.axis,
                     slice: m.slice,
-                    angle: -m.angle, 
-                    notation: getMoveNotation(m.axis, m.slice, -m.angle)
+                    angle: revTurns * (Math.PI / 2), 
+                    notation: getMoveNotation(m.axis, m.slice, revTurns * (Math.PI / 2))
                 };
             }).filter(m => m.notation !== null);
 
@@ -471,14 +514,24 @@
             pauseAutoSolve();
             moveHistory = []; 
             controls.enabled = true;
+            
+            // Fail-safe Snapping: إعادة تعيين قوية لكل الإحداثيات للتأكد من عدم وجود أي خطأ بصري
+            cubies.forEach(c => {
+                const elements = c.matrix.elements;
+                for (let i = 0; i < 16; i++) elements[i] = Math.round(elements[i]);
+                c.matrix.decompose(c.position, c.quaternion, c.scale);
+            });
+
             const countSpan = document.getElementById('moves-count');
             countSpan.innerText = "Solved!";
             countSpan.className = "bg-[#1cc065] text-white text-[13px] py-1.5 px-3 rounded-full font-bold shadow-inner";
         }
 
         function playNextStep() {
-            if (isAnimating || currentStepIndex >= solutionSequence.length) {
-                if (currentStepIndex >= solutionSequence.length) markAsSolved();
+            if (isAnimating) return; // منع التداخل بشكل كامل!
+            
+            if (currentStepIndex >= solutionSequence.length) {
+                markAsSolved();
                 return;
             }
 
@@ -504,13 +557,16 @@
                     currentStepIndex++;
                     updateBadgesUI();
                     
-                    if (isAutoSolving && currentStepIndex < solutionSequence.length) {
-                        autoSolveTimer = setTimeout(playNextStep, 100);
-                    } else if (currentStepIndex >= solutionSequence.length) {
-                        markAsSolved();
-                    } else {
-                        controls.enabled = true;
-                    }
+                    // استخدام setTimeout لضمان أن كل المتغيرات استقرت قبل استدعاء الخطوة التالية
+                    setTimeout(() => {
+                        if (isAutoSolving && currentStepIndex < solutionSequence.length) {
+                            playNextStep();
+                        } else if (currentStepIndex >= solutionSequence.length) {
+                            markAsSolved();
+                        } else {
+                            controls.enabled = true;
+                        }
+                    }, 50);
                 })
                 .start();
         }
