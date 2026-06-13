@@ -3,16 +3,40 @@ const container = document.getElementById('game-container');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#e2e8f0');
 
-// Calculate X offset depending on screen size
-const getOffsetX = () => window.innerWidth > 600 ? -2.0 : 0;
+const isMobile = () => window.innerWidth < 768;
+const getOffsetX = () => isMobile() ? 0 : -2.0;
+
+function getViewportSize() {
+    const w = container.clientWidth || window.innerWidth;
+    const h = container.clientHeight || window.innerHeight;
+    return { width: w, height: h };
+}
+
+function getCameraConfig() {
+    const { width, height } = getViewportSize();
+    if (isMobile()) {
+        const portrait = height > width;
+        return {
+            fov: portrait ? 42 : 38,
+            pos: { x: 0, y: portrait ? 4.2 : 4.8, z: portrait ? 11 : 9.5 }
+        };
+    }
+    return {
+        fov: 30,
+        pos: { x: getOffsetX() + 6.5, y: 5.5, z: 8.5 }
+    };
+}
+
+const initSize = getViewportSize();
+const initCam = getCameraConfig();
 
 // Camera setup
-const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(getOffsetX() + 6.5, 5.5, 8.5);
+const camera = new THREE.PerspectiveCamera(initCam.fov, initSize.width / initSize.height, 0.1, 100);
+camera.position.set(initCam.pos.x, initCam.pos.y, initCam.pos.z);
 
 // WebGL Renderer setup
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setSize(initSize.width, initSize.height);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 container.appendChild(renderer.domElement);
 
@@ -21,8 +45,9 @@ const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enablePan = false;
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
-controls.minDistance = 4;
-controls.maxDistance = 15;
+controls.minDistance = isMobile() ? 5 : 4;
+controls.maxDistance = isMobile() ? 18 : 15;
+controls.rotateSpeed = isMobile() ? 0.6 : 1;
 controls.target.set(getOffsetX(), 0, 0);
 controls.update();
 
@@ -172,13 +197,18 @@ function getMoveNotation(axis, slice, angle) {
     return face + (isClockwise ? '' : "'");
 }
 
+function setPointerFromEvent(event) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+}
+
 // Mouse/touch down event: detect if user is starting a drag on the cube
 function onPointerDown(event) {
     if (event.target !== renderer.domElement) return;
     if (isAnimating || isAutoSolving) return;
 
-    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    setPointerFromEvent(event);
 
     raycaster.setFromCamera(mouse, camera);
 
@@ -210,8 +240,7 @@ function onPointerDown(event) {
 function onPointerMove(event) {
     if (!isDragging || isAnimating) return;
 
-    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    setPointerFromEvent(event);
 
     raycaster.setFromCamera(mouse, camera);
     const currentPoint = new THREE.Vector3();
@@ -589,16 +618,37 @@ document.getElementById('ui-panel').addEventListener('pointerdown', (e) => e.sto
 document.getElementById('ui-panel').addEventListener('wheel', (e) => e.stopPropagation());
 
 // Handle responsive resizing for camera/renderer/cube position
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+let lastLayoutKey = '';
 
-    const newOffset = getOffsetX();
-    cubeGroup.position.x = newOffset;
-    controls.target.set(newOffset, 0, 0);
+function handleResize() {
+    const { width, height } = getViewportSize();
+    if (!width || !height) return;
+
+    const layoutKey = `${isMobile()}-${height > width}`;
+    if (layoutKey !== lastLayoutKey) {
+        const cfg = getCameraConfig();
+        camera.fov = cfg.fov;
+        camera.position.set(cfg.pos.x, cfg.pos.y, cfg.pos.z);
+        lastLayoutKey = layoutKey;
+    }
+
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    renderer.setSize(width, height);
+
+    const offset = getOffsetX();
+    cubeGroup.position.x = offset;
+    controls.target.set(offset, 0, 0);
+    controls.minDistance = isMobile() ? 5 : 4;
+    controls.maxDistance = isMobile() ? 18 : 15;
+    controls.rotateSpeed = isMobile() ? 0.6 : 1;
     controls.update();
-});
+}
+
+window.addEventListener('resize', handleResize);
+if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(handleResize).observe(container);
+}
 
 // Pointer event bindings for cube manipulation
 renderer.domElement.addEventListener('pointerdown', onPointerDown);
@@ -614,4 +664,7 @@ function animate(time) {
 }
 
 // Start everything on page load
-window.onload = animate;
+window.onload = () => {
+    handleResize();
+    animate();
+};
