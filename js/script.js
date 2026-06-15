@@ -1,17 +1,31 @@
-// ----- Three.js cube scene setup ----- //
+/* ==================================================
+Cube Scene Setup
+================================================== */
+
 const container = document.getElementById('game-container');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#e2e8f0');
 
+// True when viewport width is below 768px.
 const isMobile = () => window.innerWidth < 768;
+
+// Horizontal offset applied to the cube on desktop layouts.
 const getOffsetX = () => isMobile() ? 0 : -2.0;
 
+/**
+ * Reads the current render area dimensions.
+ * @returns object with width and height properties
+ */
 function getViewportSize() {
     const w = container.clientWidth || window.innerWidth;
     const h = container.clientHeight || window.innerHeight;
     return { width: w, height: h };
 }
 
+/**
+ * Builds camera FOV and position based on viewport and device type.
+ * @returns object with fov and pos properties
+ */
 function getCameraConfig() {
     const { width, height } = getViewportSize();
     if (isMobile()) {
@@ -63,7 +77,10 @@ const backLight = new THREE.DirectionalLight(0xffffff, 0.4);
 backLight.position.set(-10, -20, -10);
 scene.add(backLight);
 
-// Main cube group
+/* ==================================================
+Cube Construction
+================================================== */
+
 const cubeGroup = new THREE.Group();
 cubeGroup.position.x = getOffsetX();
 scene.add(cubeGroup);
@@ -110,7 +127,10 @@ for (let x = -1; x <= 1; x++) {
     }
 }
 
-// Interaction tools
+/* ==================================================
+Interaction State
+================================================== */
+
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 const cameraNormal = new THREE.Vector3();
@@ -130,9 +150,17 @@ let moveHistory = [];
 let solutionSequence = [];
 let currentStepIndex = 0;
 let isAutoSolving = false;
-let autoSolveTimer = null; // holds auto solve timer reference
+let autoSolveTimer = null;
 
-// Optimize move history: combine consecutive moves on same axis+slice
+/* ==================================================
+Move History & Notation
+================================================== */
+
+/**
+ * Merges consecutive moves on the same axis and slice into a single move.
+ * @param array of objects with axis, slice, turns, and angle properties
+ * @returns array of objects with axis, slice, turns, and angle properties
+ */
 function optimizeHistory(history) {
     let optimized = [];
     for (let i = 0; i < history.length; i++) {
@@ -162,7 +190,13 @@ function optimizeHistory(history) {
     return optimized;
 }
 
-// Standard Rubik's Cube move notation generator
+/**
+ * Converts an internal move into standard Rubik's Cube notation (e.g. R, U', F2).
+ * @param axis x, y, or z
+ * @param slice -1, 0, or 1
+ * @param {number} angle Rotation angle in radians.
+ * @returns move notation, or null when the move is a no-op
+ */
 function getMoveNotation(axis, slice, angle) {
     let turns = Math.round(angle / (Math.PI / 2));
     turns = turns % 4;
@@ -182,6 +216,8 @@ function getMoveNotation(axis, slice, angle) {
     } else if (axis === 'z') {
         if (slice === 1) face = 'F'; else if (slice === -1) face = 'B'; else face = 'S';
     }
+
+    // If no face is found, return null
     if (!face) return null;
 
     let isClockwise = true;
@@ -193,17 +229,30 @@ function getMoveNotation(axis, slice, angle) {
         if (face === 'S') isClockwise = !isPositive;
     }
 
+    // If the turn is a 180 degree turn, return the face with a 2
     if (absTurns === 2) return face + '2';
+    // If the turn is not a 180 degree turn, return the face with a single prime or double prime
     return face + (isClockwise ? '' : "'");
 }
 
+/* ==================================================
+Drag & Rotation
+================================================== */
+
+/**
+ * Maps a pointer event to normalized device coordinates for raycasting.
+ * @param event pointer event
+ */
 function setPointerFromEvent(event) {
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 }
 
-// Mouse/touch down event: detect if user is starting a drag on the cube
+/**
+ * Starts a layer drag when the user presses on a cubie.
+ * @param event pointer event
+ */
 function onPointerDown(event) {
     if (event.target !== renderer.domElement) return;
     if (isAnimating || isAutoSolving) return;
@@ -236,7 +285,10 @@ function onPointerDown(event) {
     }
 }
 
-// Mouse/touch move event: determine drag direction and update pivot rotation
+/**
+ * Updates the active layer rotation while the user drags.
+ * @param event pointer event
+ */
 function onPointerMove(event) {
     if (!isDragging || isAnimating) return;
 
@@ -295,7 +347,7 @@ function onPointerMove(event) {
     }
 }
 
-// Mouse/touch up event: snap layer to nearest 90° and animate
+// Snaps the active layer to the nearest 90° turn and completes the move.
 function onPointerUp() {
     controls.enabled = true;
 
@@ -315,7 +367,10 @@ function onPointerUp() {
     }
 }
 
-// Apply the rotation, detach cubies, and update move history if needed
+/**
+ * Commits the pivot rotation, reattaches cubies, and optionally records the move.
+ * @param recordMove whether to append the move to history
+ */
 function finalizeRotation(recordMove = true) {
     if (activeAxis !== null) {
         let finalAngle = pivot.rotation[activeAxis];
@@ -365,7 +420,11 @@ function finalizeRotation(recordMove = true) {
     isAnimating = false;
 }
 
-// Pause auto solving, clear the timer
+/* ==================================================
+Auto Solve Control
+================================================== */
+
+// Stops auto-solve playback and clears any pending step timer.
 function pauseAutoSolve() {
     isAutoSolving = false;
     if (autoSolveTimer !== null) {
@@ -374,7 +433,7 @@ function pauseAutoSolve() {
     }
 }
 
-// Cancel all animations, timers, and reset interaction state
+// Cancels tweens, auto-solve, and any in-progress layer rotation.
 function forceStopAnimations() {
     pauseAutoSolve();
     TWEEN.removeAll();
@@ -385,7 +444,11 @@ function forceStopAnimations() {
     controls.enabled = true;
 }
 
-// Scramble the cube by performing a sequence of random valid moves
+/* ==================================================
+Scramble & Reset
+================================================== */
+
+// Applies 25 random animated moves to scramble the cube.
 function scramble() {
     if (isAnimating && !isAutoSolving) return;
     forceStopAnimations();
@@ -400,7 +463,7 @@ function scramble() {
     const slices = [-1, 0, 1];
     const directions = [Math.PI / 2, -Math.PI / 2];
 
-    // Helper function to recursively perform random moves
+    // Executes one random scramble move, then chains the next until done.
     function performRandomMove() {
         if (moves === 0) {
             isAnimating = false;
@@ -432,7 +495,7 @@ function scramble() {
     performRandomMove();
 }
 
-// Reset cube to solved state without animation
+// Returns the cube and camera to their initial solved state.
 function resetCube() {
     forceStopAnimations();
     document.getElementById('solution-card').classList.add('hidden');
@@ -453,7 +516,11 @@ function resetCube() {
     controls.target.set(getOffsetX(), 0, 0);
 }
 
-// Generate the reverse-move solution sequence for the current state
+/* ==================================================
+Solution Generation & Playback
+================================================== */
+
+// Builds the reverse-move solution from history and shows the solution UI.
 function generateSolution() {
     if (isAnimating || isDragging) return;
 
@@ -483,72 +550,7 @@ function generateSolution() {
     renderSolutionUI();
 }
 
-// Render the solution UI: move list, badges, moves count
-function renderSolutionUI() {
-    const card = document.getElementById('solution-card');
-    const textDiv = document.getElementById('solution-text');
-    const badgesDiv = document.getElementById('solution-badges');
-    const countSpan = document.getElementById('moves-count');
-
-    card.classList.remove('hidden');
-    countSpan.innerText = `${solutionSequence.length} moves`;
-    countSpan.className = "moves-count";
-
-    textDiv.innerText = solutionSequence.map(s => s.notation).join('  ');
-
-    // Create badge for every move in solution
-    badgesDiv.innerHTML = '';
-    solutionSequence.forEach((step, idx) => {
-        const badge = document.createElement('div');
-        badge.innerText = step.notation;
-        badge.id = `badge-${idx}`;
-        badge.className = 'badge badge-default';
-        badgesDiv.appendChild(badge);
-    });
-
-    updateBadgesUI();
-}
-
-// Update the state and appearance of solution badges
-function updateBadgesUI() {
-    solutionSequence.forEach((_, idx) => {
-        const badge = document.getElementById(`badge-${idx}`);
-        if (!badge) return;
-
-        if (idx < currentStepIndex) {
-            badge.className = 'badge badge--completed';
-        } else if (idx === currentStepIndex) {
-            badge.className = 'badge badge-active';
-            badge.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        } else {
-            badge.className = 'badge badge-default';
-        }
-    });
-}
-
-// Mark UI/logic as solved (after all solution steps played)
-function markAsSolved() {
-    pauseAutoSolve();
-    moveHistory = [];
-    controls.enabled = true;
-
-    cubies.forEach(c => {
-        const elements = c.matrix.elements;
-        for (let i = 0; i < 16; i++) {
-            elements[i] = Math.round(elements[i]);
-            if(elements[i] === -0) elements[i] = 0;
-        }
-        c.matrix.decompose(c.position, c.quaternion, c.scale);
-    });
-
-    const countSpan = document.getElementById('moves-count');
-    if(countSpan) {
-        countSpan.innerText = "Solved!";
-        countSpan.className = "moves-count moves-count-solved";
-    }
-}
-
-// Play the next step in the solution (used for step-by-step or auto-solve)
+// Animates the next solution step, or marks the cube as solved when finished.
 function playNextStep() {
     if (isAnimating) return;
 
@@ -593,7 +595,7 @@ function playNextStep() {
         .start();
 }
 
-// Toggle auto-solve (play solution sequence animated & automatically)
+// Starts or pauses automatic playback of the solution sequence.
 function toggleAutoSolve() {
     if (solutionSequence.length === 0) return;
     if (isAutoSolving) {
@@ -604,22 +606,81 @@ function toggleAutoSolve() {
     }
 }
 
-// --- UI and event listeners registrations --- //
-document.getElementById('btn-scramble').addEventListener('click', scramble);
-document.getElementById('btn-reset').addEventListener('click', resetCube);
-document.getElementById('btn-solution').addEventListener('click', generateSolution);
-document.getElementById('btn-next').addEventListener('click', () => { pauseAutoSolve(); playNextStep(); });
-document.getElementById('btn-auto').addEventListener('click', toggleAutoSolve);
-document.getElementById('btn-pause').addEventListener('click', pauseAutoSolve);
-document.getElementById('btn-resume').addEventListener('click', () => { if(!isAutoSolving && solutionSequence.length > 0) toggleAutoSolve(); });
+// Clears history, normalizes cubie matrices, and updates the UI to "Solved!".
+function markAsSolved() {
+    pauseAutoSolve();
+    moveHistory = [];
+    controls.enabled = true;
 
-// Prevent UI panel interaction from affecting cube controls
-document.getElementById('ui-panel').addEventListener('pointerdown', (e) => e.stopPropagation());
-document.getElementById('ui-panel').addEventListener('wheel', (e) => e.stopPropagation());
+    cubies.forEach(c => {
+        const elements = c.matrix.elements;
+        for (let i = 0; i < 16; i++) {
+            elements[i] = Math.round(elements[i]);
+            if(elements[i] === -0) elements[i] = 0;
+        }
+        c.matrix.decompose(c.position, c.quaternion, c.scale);
+    });
 
-// Handle responsive resizing for camera/renderer/cube position
+    const countSpan = document.getElementById('moves-count');
+    if(countSpan) {
+        countSpan.innerText = "Solved!";
+        countSpan.className = "moves-count moves-count-solved";
+    }
+}
+
+/* ==================================================
+Solution UI
+================================================== */
+
+// Populates the solution card with move text, count, and step badges.
+function renderSolutionUI() {
+    const card = document.getElementById('solution-card');
+    const textDiv = document.getElementById('solution-text');
+    const badgesDiv = document.getElementById('solution-badges');
+    const countSpan = document.getElementById('moves-count');
+
+    card.classList.remove('hidden');
+    countSpan.innerText = `${solutionSequence.length} moves`;
+    countSpan.className = "moves-count";
+
+    textDiv.innerText = solutionSequence.map(s => s.notation).join('  ');
+
+    badgesDiv.innerHTML = '';
+    solutionSequence.forEach((step, idx) => {
+        const badge = document.createElement('div');
+        badge.innerText = step.notation;
+        badge.id = `badge-${idx}`;
+        badge.className = 'badge badge-default';
+        badgesDiv.appendChild(badge);
+    });
+
+    updateBadgesUI();
+}
+
+// Highlights completed, active, and pending badges in the solution panel.
+function updateBadgesUI() {
+    solutionSequence.forEach((_, idx) => {
+        const badge = document.getElementById(`badge-${idx}`);
+        if (!badge) return;
+
+        if (idx < currentStepIndex) {
+            badge.className = 'badge badge--completed';
+        } else if (idx === currentStepIndex) {
+            badge.className = 'badge badge-active';
+            badge.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+            badge.className = 'badge badge-default';
+        }
+    });
+}
+
+/* ==================================================
+Responsive Layout
+================================================== */
+
 let lastLayoutKey = '';
 
+// Updates camera, renderer, controls, and cube offset when the viewport changes.
 function handleResize() {
     const { width, height } = getViewportSize();
     if (!width || !height) return;
@@ -645,17 +706,38 @@ function handleResize() {
     controls.update();
 }
 
+/* ==================================================
+Event Listeners
+================================================== */
+
+document.getElementById('btn-scramble').addEventListener('click', scramble);
+document.getElementById('btn-reset').addEventListener('click', resetCube);
+document.getElementById('btn-solution').addEventListener('click', generateSolution);
+document.getElementById('btn-next').addEventListener('click', () => { pauseAutoSolve(); playNextStep(); });
+document.getElementById('btn-auto').addEventListener('click', toggleAutoSolve);
+document.getElementById('btn-pause').addEventListener('click', pauseAutoSolve);
+document.getElementById('btn-resume').addEventListener('click', () => { if(!isAutoSolving && solutionSequence.length > 0) toggleAutoSolve(); });
+
+document.getElementById('ui-panel').addEventListener('pointerdown', (e) => e.stopPropagation());
+document.getElementById('ui-panel').addEventListener('wheel', (e) => e.stopPropagation());
+
 window.addEventListener('resize', handleResize);
 if (typeof ResizeObserver !== 'undefined') {
     new ResizeObserver(handleResize).observe(container);
 }
 
-// Pointer event bindings for cube manipulation
 renderer.domElement.addEventListener('pointerdown', onPointerDown);
 window.addEventListener('pointermove', onPointerMove);
 window.addEventListener('pointerup', onPointerUp);
 
-// Animation/render loop
+/* ==================================================
+Render Loop & Init
+================================================== */
+
+/**
+ * Main render loop: updates tweens, controls, and draws the scene.
+ * @param {number} time Timestamp from requestAnimationFrame.
+ */
 function animate(time) {
     requestAnimationFrame(animate);
     TWEEN.update(time);
@@ -663,7 +745,7 @@ function animate(time) {
     renderer.render(scene, camera);
 }
 
-// Start everything on page load
+// Applies initial layout and starts the render loop on page load.
 window.onload = () => {
     handleResize();
     animate();
