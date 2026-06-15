@@ -492,7 +492,7 @@ function renderSolutionUI() {
 
     card.classList.remove('hidden');
     countSpan.innerText = `${solutionSequence.length} moves`;
-    countSpan.className = "bg-[#f0f2f5] text-gray-600 text-[13px] py-1.5 px-3 rounded-full font-bold shadow-inner";
+    countSpan.className = "moves-count";
 
     textDiv.innerText = solutionSequence.map(s => s.notation).join('  ');
 
@@ -502,7 +502,7 @@ function renderSolutionUI() {
         const badge = document.createElement('div');
         badge.innerText = step.notation;
         badge.id = `badge-${idx}`;
-        badge.className = 'bg-[#f0f2f5] text-gray-700 rounded-lg px-3.5 py-1.5 font-mono font-bold text-sm shadow-sm transition-all duration-300';
+        badge.className = 'badge badge-default';
         badgesDiv.appendChild(badge);
     });
 
@@ -516,12 +516,12 @@ function updateBadgesUI() {
         if (!badge) return;
 
         if (idx < currentStepIndex) {
-            badge.className = 'bg-gray-100 text-gray-400 rounded-lg px-3.5 py-1.5 font-mono font-bold text-sm shadow-sm opacity-50';
+            badge.className = 'badge badge--completed';
         } else if (idx === currentStepIndex) {
-            badge.className = 'bg-[#ab5af4] text-white rounded-lg px-3.5 py-1.5 font-mono font-bold text-sm shadow-md transform scale-110';
+            badge.className = 'badge badge-active';
             badge.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         } else {
-            badge.className = 'bg-[#f0f2f5] text-gray-700 rounded-lg px-3.5 py-1.5 font-mono font-bold text-sm shadow-sm';
+            badge.className = 'badge badge-default';
         }
     });
 }
@@ -544,7 +544,7 @@ function markAsSolved() {
     const countSpan = document.getElementById('moves-count');
     if(countSpan) {
         countSpan.innerText = "Solved!";
-        countSpan.className = "bg-[#1cc065] text-white text-[13px] py-1.5 px-3 rounded-full font-bold shadow-inner";
+        countSpan.className = "moves-count moves-count-solved";
     }
 }
 

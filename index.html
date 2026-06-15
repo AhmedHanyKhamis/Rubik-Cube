@@ -4,45 +4,41 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Rubik's Cube Simulator</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
 
-    <div id="game-container" class="absolute inset-0 z-0"></div>
+    <div id="game-container"></div>
 
-    <div id="ui-panel" class="absolute top-4 right-4 sm:top-6 sm:right-6 w-[calc(100%-2rem)] sm:w-80 max-h-[95vh] flex flex-col gap-4 z-20 pointer-events-none overflow-y-auto custom-scrollbar pb-4">
-        
-        <div class="bg-white rounded-[20px] shadow-xl p-4 pointer-events-auto flex flex-col gap-3">
-            <div class="grid grid-cols-2 gap-3">
-                <button id="btn-scramble" class="bg-[#4a89ff] hover:bg-[#3b7eed] text-white font-bold py-3 px-4 rounded-xl shadow-sm transition transform active:scale-95">Scramble</button>
-                <button id="btn-solution" class="bg-[#ab5af4] hover:bg-[#9d4fed] text-white font-bold py-3 px-4 rounded-xl shadow-sm transition transform active:scale-95">Get Solution</button>
+    <div id="ui-panel">
+        <div class="panel">
+            <div class="button-grid">
+                <button id="btn-scramble" class="btn btn-primary">Scramble</button>
+                <button id="btn-solution" class="btn btn-solution">Get Solution</button>
             </div>
-            
-            <button id="btn-reset" class="w-full border-2 border-gray-100 hover:bg-gray-50 text-gray-800 font-bold py-3 px-4 rounded-xl shadow-sm transition transform active:scale-95">Reset</button>
-            
-            <div class="grid grid-cols-2 gap-3">
-                <button id="btn-next" class="bg-[#f0f2f5] hover:bg-[#e4e6eb] text-gray-800 font-bold py-3 px-4 rounded-xl shadow-sm transition transform active:scale-95 disabled:opacity-50">Next Step</button>
-                <button id="btn-auto" class="bg-[#1cc065] hover:bg-[#18a858] text-white font-bold py-3 px-4 rounded-xl shadow-sm transition transform active:scale-95 disabled:opacity-50">Auto Solve</button>
+
+            <button id="btn-reset" class="btn btn-reset">Reset</button>
+
+            <div class="button-grid">
+                <button id="btn-next" class="btn btn-secondary">Next Step</button>
+                <button id="btn-auto" class="btn btn-action">Auto Solve</button>
             </div>
-            
-            <div class="grid grid-cols-2 gap-3">
-                <button id="btn-pause" class="bg-[#f3cc77] hover:bg-[#eabf66] text-white font-bold py-3 px-4 rounded-xl shadow-sm transition transform active:scale-95 disabled:opacity-50">Pause</button>
-                <button id="btn-resume" class="bg-[#f3cc77] hover:bg-[#eabf66] text-white font-bold py-3 px-4 rounded-xl shadow-sm transition transform active:scale-95 disabled:opacity-50">Resume</button>
+
+            <div class="button-grid">
+                <button id="btn-pause" class="btn btn-warning">Pause</button>
+                <button id="btn-resume" class="btn btn-warning">Resume</button>
             </div>
         </div>
 
-        <div id="solution-card" class="bg-white rounded-[20px] shadow-xl p-5 pointer-events-auto hidden flex-col gap-4 border border-gray-100">
-            <div class="flex justify-between items-center">
-                <h2 class="text-[22px] font-extrabold text-gray-900 tracking-tight">Solution</h2>
-                <span id="moves-count" class="bg-[#f0f2f5] text-gray-600 text-[13px] py-1.5 px-3 rounded-full font-bold shadow-inner">0 moves</span>
+        <div id="solution-card" class="panel hidden">
+            <div class="solution-header">
+                <h2 class="solution-title">Solution</h2>
+                <span id="moves-count" class="moves-count">0 moves</span>
             </div>
-            
-            <div class="bg-white border-2 border-[#f0f2f5] rounded-xl p-4 shadow-sm">
-                <div id="solution-text" class="text-gray-800 font-mono text-sm leading-relaxed tracking-wider font-bold min-h-[40px]">
-                </div>
-                <div id="solution-badges" class="flex flex-wrap gap-2 mt-4 max-h-48 overflow-y-auto custom-scrollbar pr-1">
-                </div>
+
+            <div class="solution-panel">
+                <div id="solution-text" class="solution-text"></div>
+                <div id="solution-badges" class="badge-list custom-scrollbar"></div>
             </div>
         </div>
     </div>
